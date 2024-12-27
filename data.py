@@ -15,9 +15,10 @@ Validate only in center???
 CREATE VOLUME MASK BEFORE PATHCES ARE CROPPED
 '''
 
-PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; this way gaussian blobs at the border dont cause a problem! (e.g. target near the border but not fully visible)
-STRIDE = 1  # when cropping patches (since we only use the inner (48, 48, 48) from the (96, 96, 96) patches a stride <= 0.5 makes sense to use all the regions! )
-BATCH_SIZE = 4
+PATCH_SIZE = 48  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
+STRIDE = 0.75  # stride when cropping out patches ()
+assert (1 - STRIDE) * PATCH_SIZE % 2 == 0
+BATCH_SIZE = 8
 NUM_WORKERS=16
 PIN_MEMORY=False
 

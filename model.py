@@ -24,18 +24,22 @@ class NN(pl.LightningModule):
             self,
             learning_rate,
             weights_cross_entropy,
+            stride,
+            patch_size,
             ratio_losses=RATIO_LOSSES,
             include_background_diceloss=INCLUDE_BACCKGROUND_DICELOSS,
             drop_rate=DROP_RATE,
             channels=CHANNELS,
-            strides=STRIDES):
+            strides=STRIDES,
+            ):
 
         super().__init__()
 
         self.learning_rate = learning_rate
         self.weights_cross_entropy = weights_cross_entropy.to('cuda:0')
         self.ratio_losses = ratio_losses
-        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False)
+        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')
+        self.mask_loss, self.ignore_size = self.create_mask_loss(stride=stride, patch_size=patch_size)
 
         self.drop_rate=drop_rate
         self.channels=channels
@@ -65,6 +69,22 @@ class NN(pl.LightningModule):
 
         return pred
     
+    # takes as input the patch_size and stride and caculated the mask such that every region is used once
+    def create_mask_loss(self, stride, patch_size):
+
+        # mask should have all zeros except for the inner cube thats relevant
+        mask = torch.zeros((patch_size, patch_size, patch_size))
+
+        # calculate the inner cude such that with the defined stride allways contributes onces
+        ignore_size = int(patch_size * (1 - stride) / 2)
+        
+        mask[ignore_size: -ignore_size, ignore_size: -ignore_size, ignore_size: -ignore_size] = 1
+
+        mask = mask.to('cuda:0')
+
+        return mask, ignore_size
+
+    
     # takes as input prediction probabilities and targets
     # calculates the IoU for all 6 classes and the average from them
     def calculate_IoU_Dice_scores(self, preds_sm, targets):
@@ -73,6 +93,10 @@ class NN(pl.LightningModule):
 
             preds_= preds_sm.detach()
             y = targets.detach().type(torch.int64)
+
+            # crop out the inner cube of relevante
+            preds_ = preds_[:, :, self.ignore_size:-self.ignore_size, self.ignore_size:-self.ignore_size, self.ignore_size:-self.ignore_size]
+            y = y[:, :, self.ignore_size:-self.ignore_size, self.ignore_size:-self.ignore_size, self.ignore_size:-self.ignore_size]
 
             # first assign classes to prodictions
             preds_ = torch.argmax(preds_, dim=1).type(torch.int64)
@@ -89,7 +113,6 @@ class NN(pl.LightningModule):
                 target_class = y[:, c]  # targets for the batch (bs, z, y, x)
 
                 # calculations for IoU
-
                 intersection = (pred_class & target_class).sum(dim=(1, 2, 3))  # per-batch intersection
                 union = (pred_class | target_class).sum(dim=(1, 2, 3))  # Per-batch union
 
@@ -122,13 +145,27 @@ class NN(pl.LightningModule):
 
         preds = self.forward(inputs)
 
-        # cross entropy loss wont work with onehot targets
-        cross_entropy_loss = F.cross_entropy(preds, torch.argmax(targets, dim=1), weight=self.weights_cross_entropy)
+        # add the batch size to the mask; currently shape (patch_size, patch_size, patch_size)
+        batch_size = preds.size()[0]
+        mask = self.mask_loss.clone()
+        mask = mask.unsqueeze(0).repeat(batch_size, 1, 1, 1)  # shape (batch_size, patch_size, patch_size, patch_size)
 
-        # dice expects softmax not logits
+        # mask the preds and targets, create integer classes instead of onehots, calculate loss and divide it by the number of valid voxels
+        masked_targets = torch.argmax(targets, dim=1) * mask
+        masked_preds = preds * mask.unsqueeze(1)  # add channel dim
+        
+        # cross entropy loss wont work with onehot targets
+        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), weight=self.weights_cross_entropy, reduction='sum')
+        cross_entropy_loss = cross_entropy_loss / mask.sum()  # normalize the loss
+        
+        # dice expects softmax not logits and onehot targets
         preds_sm = F.softmax(preds, dim=1)
 
-        dice_loss = self.diceloss(preds_sm, targets)
+        # also apply mask
+        masked_preds_sm = preds_sm * mask.unsqueeze(1)
+        masked_targets_onehot = targets * mask.unsqueeze(1)
+        
+        dice_loss = self.diceloss(masked_preds_sm, masked_targets_onehot)
 
         total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
         
@@ -166,11 +203,27 @@ class NN(pl.LightningModule):
 
         preds = self.forward(inputs)
 
-        cross_entropy_loss = F.cross_entropy(preds, torch.argmax(targets, dim=1), weight=self.weights_cross_entropy)
+        # add the batch size to the mask; currently shape (patch_size, patch_size, patch_size)
+        batch_size = preds.size()[0]
+        mask = self.mask_loss.clone()
+        mask = mask.unsqueeze(0).repeat(batch_size, 1, 1, 1)  # shape (batch_size, patch_size, patch_size, patch_size)
 
+        # mask the preds and targets, create integer classes instead of onehots, calculate loss and divide it by the number of valid voxels
+        masked_targets = torch.argmax(targets, dim=1) * mask
+        masked_preds = preds * mask.unsqueeze(1)  # add channel dim
+
+        # cross entropy loss wont work with onehot targets
+        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), weight=self.weights_cross_entropy, reduction='sum')
+        cross_entropy_loss = cross_entropy_loss / mask.sum()  # normalize the loss
+
+        # dice expects softmax not logits and onehot targets
         preds_sm = F.softmax(preds, dim=1)
 
-        dice_loss = self.diceloss(preds_sm, targets)
+        # also apply mask
+        masked_preds_sm = preds_sm * mask.unsqueeze(1)
+        masked_targets_onehot = targets * mask.unsqueeze(1)
+
+        dice_loss = self.diceloss(masked_preds_sm, masked_targets_onehot)
 
         total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
 
@@ -215,9 +268,9 @@ class NN(pl.LightningModule):
                 y = int(y)
                 x = int(x)
                 
-                # assign the prediction and targets at the lication
-                self.valid_pred_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] = preds_sm[i, :, :, :, :]
-                self.valid_target_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] = targets[i, :, :, :, :]
+                # assign the prediction and targets at the lication; do this by adding them and multiplying them with the mask!
+                self.valid_pred_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_preds_sm[i, :, :, :, :]  # adding them s
+                self.valid_target_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_targets_onehot[i, :, :, :, :]
 
         return total_loss
     

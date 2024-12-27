@@ -9,9 +9,9 @@ import pickle
 
 # samples with no targets -> diceloss???
 # ground truth mask boolean
-NAME = 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
+NAME = 'Try_Masked_Losses'  # 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
 EPOCHS = 15
-LEARNING_RATE = 1.414e-4  # 2e-4
+LEARNING_RATE = 2e-4  # 2e-4
 
 # save predictions of each valid sample here
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME)
@@ -41,7 +41,7 @@ for fold, sample in enumerate(samples):
     # call setup explicitly; this creates the datasets which is needed to assign loss weights in NN
     data_module.setup(stage="fit")
     
-    nn = NN(learning_rate=LEARNING_RATE, weights_cross_entropy=data_module.ds_train.weights_cross_entropy)
+    nn = NN(learning_rate=LEARNING_RATE, weights_cross_entropy=data_module.ds_train.weights_cross_entropy, stride=STRIDE, patch_size=PATCH_SIZE)
     
     logger = TensorBoardLogger(
         save_dir='/home/olli/Projects/Kaggle/CryoET/tb_logs',

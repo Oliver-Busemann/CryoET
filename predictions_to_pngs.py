@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
-NAME_RUN = name_run = 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
+NAME_RUN = 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'  # 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
