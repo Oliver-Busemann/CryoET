@@ -9,13 +9,15 @@ import pickle
 
 # samples with no targets -> diceloss???
 # ground truth mask boolean
-NAME = 'ACTUALLY_SMALLRADIUS_LR1e-3_20EPOCHS_96PATCHSIZE_0.1RATIOLOSS_4BS_CHANNELS_32_64_128_256_512_No_CE_Weight_Ratio_0.5'
+NAME = 'Baseline_Sem_Seg'
 EPOCHS = 11
 LEARNING_RATE = 1e-3  # 2e-4
 
 # save predictions of each valid sample here
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME)
 os.makedirs(folder_predictions, exist_ok=True)
+folder_weights = os.path.join('/home/olli/Projects/Kaggle/CryoET/Weights', NAME)
+os.makedirs(folder_weights, exist_ok=True)
 
 torch.set_float32_matmul_precision('medium')
 
@@ -70,6 +72,13 @@ for fold, sample in enumerate(samples):
 
     with open(path_save, 'wb') as f:
         pickle.dump(tuple_save, f)
+
+    # save weights
+    weights_filename = f'{NAME}_{fold}.pth'
+    path_weights = os.path.join(folder_weights, weights_filename)
+
+    nn.cnn.to('cpu')
+    torch.save(nn.cnn.state_dict(), path_weights)
 
     del tuple_save
     del trainer

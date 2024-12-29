@@ -8,11 +8,21 @@ from tqdm import tqdm
 import zarr
 import json
 from scipy.ndimage import center_of_mass
+import concurrent.futures
+from competition_metric import *
+
 
 '''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER'''
 
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
+
+# for cc3d.dust(labels, threshold=min_size)
+MIN_THRESHOLD_1 = None
+MIN_THRESHOLD_2 = None
+MIN_THRESHOLD_3 = None
+MIN_THRESHOLD_4 = None
+MIN_THRESHOLD_5 = None
 
 
 
@@ -46,6 +56,7 @@ df_preds = pd.DataFrame({col: [] for col in df_cols})
 # add class predictions and ground truths here
 preds = {i: [] for i in range(1, 6)}
 sample_names = []
+scale_values = []
 
 # prediction coordinates after masks are concerted to concrete keypoints
 preds_coords = {i: [] for i in range(1, 6)}
@@ -54,7 +65,7 @@ prediction_files = os.listdir(folder_predictions)
 
 print('Loading all predictions and creating solution df')
 
-id_targets, id_preds = 0, 0
+id_targets = 0
 
 # loop over all samples and all classes to get the targets and predictions of each class
 for filename in tqdm(prediction_files):
@@ -70,6 +81,8 @@ for filename in tqdm(prediction_files):
     scale_z, scale_y, scale_x = scales
     del volume
     
+    scale_values.append((scale_z, scale_y, scale_x))
+
     # low loop over all class names, load the labels from their json file and add them to the solution df
     path_labels = os.path.join(folder_labels, sample, 'Picks')
 
@@ -96,7 +109,7 @@ for filename in tqdm(prediction_files):
             df_targets = pd.concat([df_targets, df_target_new], axis=0)
 
             id_targets += 1
-
+    
     # load the predictions            
     path_filename = os.path.join(folder_predictions, filename)
 
@@ -120,17 +133,79 @@ for filename in tqdm(prediction_files):
 
         preds[c].append(current_pred)
 
-    # now also load the 
-    break
+    
 
 df_targets['id'] = df_targets['id'].astype(int)
 
 print('Finding Connected Components and creating submission df')
 
-for pred, sample in zip()
-#labels = cc3d.connected_components(preds[1][0], connectivity=CONNECTIVITY)
-#print(type(labels))
-#print(labels.dtype)
-#print(labels.shape)
-#print(labels.sum())
-#print(np.unique(labels))
+# takes as input connected_components with unique values and one value to find the center_of_mass
+# this way all values can be processed in parallel
+def get_all_components(array_unique_values, unique_value, class_name, sample, scale_z, scale_y, scale_x):
+
+    binary_mask_component = array_unique_values == unique_value
+    
+    centroid = center_of_mass(binary_mask_component)
+    
+    z_coord, y_coord, x_coord = centroid
+
+    z_coord *= scale_z
+    y_coord *= scale_y
+    x_coord *= scale_x
+    
+    return (0, sample, class_name, x_coord, y_coord, z_coord)
+
+results = []
+
+# loop over all classes and get predictions for each sample
+for c in tqdm(range(1, 6)):
+
+    class_name = num_to_class[c]
+
+    # loop over all samples and the predictions for this class
+    for index in range(len(sample_names)):
+
+        sample = sample_names[index]
+
+        scale_z, scale_y, scale_x = scale_values[index]
+
+        # pred for this class and this sample
+        pred_class_sample = preds[c][index]
+        
+        # find connected components; this is an array with the same shape that has unique values for each component (0 is background)
+        pred_class_sample_components = cc3d.connected_components(pred_class_sample, connectivity=CONNECTIVITY)
+
+        unique_values = np.unique(pred_class_sample_components)
+        unique_values = unique_values[unique_values != 0]
+
+        # create function inputs
+        args = [(pred_class_sample_components, unique_value, class_name, sample, scale_z, scale_y, scale_x) for unique_value in unique_values]
+
+        # process the unique values in parallel
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+
+            result = list(executor.map(get_all_components, *zip(*args)))
+        
+        # collect results
+        results.extend(result)
+
+# add all predictions to a pred df
+for values_df_pred in results:
+
+    df_pred_new = pd.DataFrame({col_name: [col_value] for col_name, col_value in zip(df_cols, values_df_pred)})
+    df_preds = pd.concat([df_preds, df_pred_new], axis=0)
+
+df_preds['id'] = list(range(len(df_preds)))  # make it unique ids
+
+print('Computing final score: ')
+
+# compute final score from comp metric
+final_score = score(
+    solution=df_targets,
+    submission=df_preds,
+    row_id_column_name='id',
+    distance_multiplier=0.5,  # ain 0.5 of  radius??
+    beta=4
+)
+
+print(f'FINAL SCORE: {final_score}')
