@@ -12,13 +12,12 @@ from collections import deque
 ''''
 X, Y, Z coordinates have relevance to pdata.output_coordinatesrobability of each target???
 Validate only in center???
-CREATE VOLUME MASK BEFORE PATHCES ARE CROPPED
 '''
 
-PATCH_SIZE = 48  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
+PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
 STRIDE = 0.75  # stride when cropping out patches ()
 assert (1 - STRIDE) * PATCH_SIZE % 2 == 0
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 NUM_WORKERS=16
 PIN_MEMORY=False
 
@@ -59,12 +58,20 @@ class_radiuses = {
     'virus-like-particle': 135 / 10,
 }
 
+#class_num_radius = {
+#    1: 60 / 10,
+#    2: 90 / 10,
+#    3: 150 / 10,
+#    4: 130 / 10,
+#    5: 135 / 10,
+#}
+
 class_num_radius = {
-    1: 60 / 10,
-    2: 90 / 10,
-    3: 150 / 10,
-    4: 130 / 10,
-    5: 135 / 10,
+    1: 6,
+    2: 6,
+    3: 10,
+    4: 6,
+    5: 12,
 }
 
 # loop over all samples to create volumes and its labels
@@ -350,7 +357,7 @@ class LightningData(pl.LightningDataModule):
 if __name__ == '__main__':
     
     data = Data(sample_names=['TS_5_4'])  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
-
+    
     for i in range(100):
         input_, segmentation_mask, coords = data.__getitem__(i)
 

@@ -9,9 +9,9 @@ import pickle
 
 # samples with no targets -> diceloss???
 # ground truth mask boolean
-NAME = 'Try_Masked_Losses'  # 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
-EPOCHS = 15
-LEARNING_RATE = 2e-4  # 2e-4
+NAME = 'ACTUALLY_SMALLRADIUS_LR1e-3_20EPOCHS_96PATCHSIZE_0.1RATIOLOSS_4BS_CHANNELS_32_64_128_256_512_No_CE_Weight_Ratio_0.5'
+EPOCHS = 11
+LEARNING_RATE = 1e-3  # 2e-4
 
 # save predictions of each valid sample here
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME)
@@ -70,6 +70,11 @@ for fold, sample in enumerate(samples):
 
     with open(path_save, 'wb') as f:
         pickle.dump(tuple_save, f)
+
+    del tuple_save
+    del trainer
+    del nn
+    del data_module
 
     gc.collect()
     torch.cuda.empty_cache()

@@ -6,13 +6,14 @@ from monai.networks.nets.segresnet import SegResNet as SRN
 from torchinfo import summary
 from monai.losses import DiceLoss
 
-
-RATIO_LOSSES = 0.2  # 0-1 (weight for crossentropy vs diceloss)
+'''Weights DiceLoss!
+Punish overlap in loss?'''
+RATIO_LOSSES = 0.5  # 0-1 (weight for crossentropy vs diceloss)
 INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be included for dice loss calculation
 
-DROP_RATE = 0.5
-CHANNELS = (32, 64, 128, 256, 512)
-STRIDES = (2, 2, 2, 2)
+DROP_RATE = 0.2
+CHANNELS = (32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
+STRIDES = (2, 2, 1, 1)  # (2, 2, 2, 2)
 
 assert len(CHANNELS) == len(STRIDES) + 1
 
@@ -155,7 +156,7 @@ class NN(pl.LightningModule):
         masked_preds = preds * mask.unsqueeze(1)  # add channel dim
         
         # cross entropy loss wont work with onehot targets
-        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), weight=self.weights_cross_entropy, reduction='sum')
+        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), reduction='sum')  # , weight=self.weights_cross_entropy, reduction='sum')
         cross_entropy_loss = cross_entropy_loss / mask.sum()  # normalize the loss
         
         # dice expects softmax not logits and onehot targets
@@ -213,7 +214,7 @@ class NN(pl.LightningModule):
         masked_preds = preds * mask.unsqueeze(1)  # add channel dim
 
         # cross entropy loss wont work with onehot targets
-        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), weight=self.weights_cross_entropy, reduction='sum')
+        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), reduction='sum')  # , weight=self.weights_cross_entropy, reduction='sum')
         cross_entropy_loss = cross_entropy_loss / mask.sum()  # normalize the loss
 
         # dice expects softmax not logits and onehot targets
@@ -268,9 +269,9 @@ class NN(pl.LightningModule):
                 y = int(y)
                 x = int(x)
                 
-                # assign the prediction and targets at the lication; do this by adding them and multiplying them with the mask!
-                self.valid_pred_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_preds_sm[i, :, :, :, :]  # adding them s
-                self.valid_target_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_targets_onehot[i, :, :, :, :]
+                # assign the prediction and targets at the lication; do this by adding the masked pred/targets in the full volume; this way only the middle cube is used
+                self.valid_pred_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_preds_sm[i, :, :, :, :].cpu()  # adding them s
+                self.valid_target_volume[:, z: z + patch_size, y: y + patch_size, x: x + patch_size] += masked_targets_onehot[i, :, :, :, :].cpu().type(torch.bool)
 
         return total_loss
     
@@ -286,8 +287,6 @@ class NN(pl.LightningModule):
 
             self.start_z = self.trainer.datamodule.ds_valid.start_z
             self.start_xy = self.trainer.datamodule.ds_valid.start_xy
-    
-
     
     def on_validation_epoch_end(self):
         

@@ -5,8 +5,8 @@ import pickle
 import numpy as np
 import zarr
 from tqdm import tqdm
-
-NAME_RUN = 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'  # 'UNET_EPOCHS_15_LR_1.414e-4_Patch_Size_96_BS_4_Drop_0.5_Channels_32_64_128_256_512_RatioLosses_0.2'
+# 0.18839267392522743
+NAME_RUN = 'ACTUALLY_SMALLRADIUS_LR1e-3_20EPOCHS_96PATCHSIZE_0.1RATIOLOSS_4BS_CHANNELS_32_64_128_256_512_No_CE_Weight_Ratio_0.5'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
@@ -44,7 +44,6 @@ for filename in prediction_files:
     pred = pred[:, start_z: start_z + 184, start_xy: start_xy + 630, start_xy: start_xy + 630]  # now shape (184, 630, 630)
     target = target[:, start_z: start_z + 184, start_xy: start_xy + 630, start_xy: start_xy + 630]
 
-    # load the volume
     # load the volume
     path_volume = os.path.join(folder_volumes, sample, 'VoxelSpacing10.000', 'denoised.zarr')
 
@@ -99,3 +98,5 @@ for filename in prediction_files:
         fig.suptitle(f'Sample: {sample}; Z-Slice: {index_z + 1} / 184')
         fig.tight_layout()
         fig.savefig(f'{folder_save_sample}/{str(index_z)}.png')
+
+        plt.close(fig)
