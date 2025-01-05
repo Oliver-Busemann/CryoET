@@ -14,8 +14,10 @@ from competition_metric import *
 
 '''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER'''
 
+NAME_RUN = 'Baseline_Sem_Seg_Try_2'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
+RESIZE_FACTOR_CC = 0.5
 
 # for cc3d.dust(labels, threshold=min_size)
 MIN_THRESHOLD_1 = None
@@ -23,10 +25,6 @@ MIN_THRESHOLD_2 = None
 MIN_THRESHOLD_3 = None
 MIN_THRESHOLD_4 = None
 MIN_THRESHOLD_5 = None
-
-
-
-NAME_RUN = 'ACTUALLY_SMALLRADIUS_LR1e-3_20EPOCHS_96PATCHSIZE_0.1RATIOLOSS_4BS_CHANNELS_32_64_128_256_512_No_CE_Weight_Ratio_0.5'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
@@ -39,14 +37,6 @@ num_to_class = {
     3: 'ribosome',
     4: 'thyroglobulin',
     5: 'virus-like-particle'
-}
-
-class_radius_eval = {
-    1: 60 / 10,
-    2: 90 / 10,
-    3: 150 / 10,
-    4: 130 / 10,
-    5: 135 / 10,
 }
 
 df_cols = ['id', 'experiment', 'particle_type', 'x', 'y', 'z']
@@ -83,7 +73,7 @@ for filename in tqdm(prediction_files):
     
     scale_values.append((scale_z, scale_y, scale_x))
 
-    # low loop over all class names, load the labels from their json file and add them to the solution df
+    # now loop over all class names, load the labels from their json file and add them to the solution df
     path_labels = os.path.join(folder_labels, sample, 'Picks')
 
     for class_name in ['apo-ferritin', 'beta-galactosidase', 'ribosome', 'thyroglobulin', 'virus-like-particle']:
@@ -114,24 +104,26 @@ for filename in tqdm(prediction_files):
     path_filename = os.path.join(folder_predictions, filename)
 
     with open(path_filename, 'rb') as f:
-        (pred, target, start_z, start_xy) = pickle.load(f)
+        (pred, _, start_z, start_xy) = pickle.load(f)  # target is not needed
 
     # crop out the original size without the added borders
     pred = pred[:, start_z: start_z + 184, start_xy: start_xy + 630, start_xy: start_xy + 630]  # now shape (184, 630, 630)
-    target = target[:, start_z: start_z + 184, start_xy: start_xy + 630, start_xy: start_xy + 630]
 
-    # assign predictions
-    pred = pred.argmax(0)
+    # get class predictions
+    pred = torch.softmax(pred, dim=0)
+    pred = torch.argmax(pred, dim=0).type(torch.int64)  # assign classes to max prob
+    pred = torch.nn.functional.one_hot(pred, num_classes=6)
+    pred = pred.permute(3, 0, 1, 2)  # onehot has adds channel in last dim
+    
+    # now resize the predictions to speed up cc3d calculations
+    pred = pred.type(torch.float32).unsqueeze(0)
+    pred = torch.nn.functional.interpolate(pred, scale_factor=RESIZE_FACTOR_CC, mode='trilinear', align_corners=False)  # now shape (92, 315, 315)
+    pred = pred.squeeze(0).numpy() > 0.5
 
-    # loop over all 5 classes and assign predictions and target as bool to save RAM
-    for c in range(1, 6):
-        
-        current_target = target[c, :, :, :].numpy().astype(bool)  # dim 0 is background
+    # loop over all 5 classes and assign predictions
+    for c in range(1, 6): # dim 0 is background
 
-        current_pred = pred == c  # filter them
-        current_pred = current_pred.numpy().astype(bool)
-
-        preds[c].append(current_pred)
+        preds[c].append(pred[c, :, :, :])  # current class channel
 
     
 
@@ -149,9 +141,9 @@ def get_all_components(array_unique_values, unique_value, class_name, sample, sc
     
     z_coord, y_coord, x_coord = centroid
 
-    z_coord *= scale_z
-    y_coord *= scale_y
-    x_coord *= scale_x
+    z_coord *= scale_z / RESIZE_FACTOR_CC # scale them
+    y_coord *= scale_y / RESIZE_FACTOR_CC
+    x_coord *= scale_x / RESIZE_FACTOR_CC
     
     return (0, sample, class_name, x_coord, y_coord, z_coord)
 
@@ -159,12 +151,13 @@ results = []
 
 # loop over all classes and get predictions for each sample
 for c in tqdm(range(1, 6)):
-
+    
+    print('Pocessing class ', c)
     class_name = num_to_class[c]
 
     # loop over all samples and the predictions for this class
     for index in range(len(sample_names)):
-
+        print(index, ' / ', len(sample_names))
         sample = sample_names[index]
 
         scale_z, scale_y, scale_x = scale_values[index]
@@ -177,6 +170,8 @@ for c in tqdm(range(1, 6)):
 
         unique_values = np.unique(pred_class_sample_components)
         unique_values = unique_values[unique_values != 0]
+
+        # for each unique value find the center of this connected component and add it to the pred df
 
         # create function inputs
         args = [(pred_class_sample_components, unique_value, class_name, sample, scale_z, scale_y, scale_x) for unique_value in unique_values]

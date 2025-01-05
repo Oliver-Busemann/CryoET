@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 # 0.18839267392522743
-NAME_RUN = 'ACTUALLY_SMALLRADIUS_LR1e-3_20EPOCHS_96PATCHSIZE_0.1RATIOLOSS_4BS_CHANNELS_32_64_128_256_512_No_CE_Weight_Ratio_0.5'
+NAME_RUN = 'Baseline_Sem_Seg_Try_2'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'

@@ -2,18 +2,19 @@ import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import monai
-from monai.networks.nets.segresnet import SegResNet as SRN
 from torchinfo import summary
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss, TverskyLoss
 
 '''Weights DiceLoss!
-Punish overlap in loss?'''
-RATIO_LOSSES = 0.5  # 0-1 (weight for crossentropy vs diceloss)
+Punish overlap in loss?
+Experiment with dynamic weighting strategies or loss functions that directly target recall (e.g., Tversky loss or focal loss with recall emphasis)
+'''
+RATIO_LOSSES = 0.2  # 0-1 (weight for crossentropy vs diceloss)
 INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be included for dice loss calculation
 
 DROP_RATE = 0.2
-CHANNELS = (32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
-STRIDES = (2, 2, 1, 1)  # (2, 2, 2, 2)
+CHANNELS = (16, 32, 64, 128, 256)  # (32, 64, 128, 256, 512)
+STRIDES = (2, 2, 2, 2)  # (2, 2, 2, 2)
 
 assert len(CHANNELS) == len(STRIDES) + 1
 
@@ -39,7 +40,8 @@ class NN(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weights_cross_entropy = weights_cross_entropy.to('cuda:0')
         self.ratio_losses = ratio_losses
-        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')
+        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', weight=torch.Tensor([1, 2, 1, 2, 1]).to('cuda:0'))
+        #self.diceloss = TverskyLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', alpha=0.2, beta=0.8)
         self.mask_loss, self.ignore_size = self.create_mask_loss(stride=stride, patch_size=patch_size)
 
         self.drop_rate=drop_rate
@@ -55,7 +57,7 @@ class NN(pl.LightningModule):
             dropout=self.drop_rate,
         )
 
-        self.valid_dice = []
+        self.valid_dice_weighted = []
 
         # assign predictions of last epoch here
         self.valid_pred_volume = None
@@ -137,7 +139,10 @@ class NN(pl.LightningModule):
             iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus = iou_scores
             dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus = dice_scores
 
-            return mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus
+            # weights like in comp metric + background
+            mean_dice_weighted = (dice_background + dice_apo_ferritin + 2 * dice_beta_galactosidase + dice_ribosome + 2 * dice_thyroglobulin * dice_virus) / 8
+
+            return mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus, mean_dice_weighted
 
 
     def training_step(self, batch, batch_ix):
@@ -170,7 +175,7 @@ class NN(pl.LightningModule):
 
         total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
         
-        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus = self.calculate_IoU_Dice_scores(preds_sm, targets)
+        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus, mean_dice_weighted = self.calculate_IoU_Dice_scores(preds_sm, targets)
 
         dict_logger = {
             'Train_Total_Loss': total_loss,
@@ -192,6 +197,7 @@ class NN(pl.LightningModule):
             'Train_Dice_Ribosome': dice_ribosome,
             'Train_Dice_Thyroglobulin': dice_thyroglobulin,
             'Train_Dice_Virus': dice_virus,
+            'Train_Dice_Weighted': mean_dice_weighted,
         }
 
         self.log_dict(dict_logger, prog_bar=True, logger=True, on_step=False, on_epoch=True)
@@ -228,7 +234,7 @@ class NN(pl.LightningModule):
 
         total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
 
-        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus = self.calculate_IoU_Dice_scores(preds_sm, targets)
+        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus, mean_dice_weighted = self.calculate_IoU_Dice_scores(preds_sm, targets)
 
         dict_logger = {
             'Valid_Total_Loss': total_loss,
@@ -250,12 +256,13 @@ class NN(pl.LightningModule):
             'Valid_Dice_Ribosome': dice_ribosome,
             'Valid_Dice_Thyroglobulin': dice_thyroglobulin,
             'Valid_Dice_Virus': dice_virus,
+            'Valid_Dice_Weighted': mean_dice_weighted,
         }
         self.log_dict(dict_logger, prog_bar=True, logger=True, on_step=False, on_epoch=True)
 
         # calculate mean_iou for all batches in last epoch; also assign the predictions
         if self.current_epoch == self.trainer.max_epochs - 1:
-            self.valid_dice.append(mean_dice)
+            self.valid_dice_weighted.append(mean_dice_weighted)
 
             patch_coords = patch_coords.cpu().numpy()  # shape (bs, 3)
             
@@ -279,7 +286,7 @@ class NN(pl.LightningModule):
         
         # initialize it again because during sanity checking it changes..
         if self.current_epoch == self.trainer.max_epochs - 1:
-            self.valid_dice = []
+            self.valid_dice_weighted = []
 
             # assign predictions of last epoch here; trainer must be connected which is why one cannot init it with it
             self.valid_pred_volume = torch.zeros(size=(6, self.trainer.datamodule.ds_valid.shape_z, self.trainer.datamodule.ds_valid.shape_xy, self.trainer.datamodule.ds_valid.shape_xy)).type(torch.float32)  # shape (n_classes, dim_z, dim_xy, dim_xy)
@@ -292,7 +299,7 @@ class NN(pl.LightningModule):
         
         if self.current_epoch == self.trainer.max_epochs - 1:
 
-            self.valid_dice = sum(self.valid_dice) / len(self.valid_dice)
+            self.valid_dice_weighted = sum(self.valid_dice_weighted) / len(self.valid_dice_weighted)
     
     def configure_optimizers(self):
         
@@ -319,12 +326,12 @@ if __name__ == '__main__':
         spatial_dims=3,
         in_channels=1,
         out_channels=6,
-        channels=(32, 64, 128, 256, 512),
-        strides=(2, 2, 2, 2),
+        channels=CHANNELS,
+        strides=STRIDES,
         dropout=DROP_RATE
     )
 
-    exp_input = torch.zeros(2, 1, 48, 48, 48)
+    exp_input = torch.zeros(4, 1, 96, 96, 96)
     print(summary(cnn, input_data=exp_input))
     print(cnn(exp_input).size())
     with torch.no_grad():

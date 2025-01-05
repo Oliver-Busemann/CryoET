@@ -9,9 +9,10 @@ import pickle
 
 # samples with no targets -> diceloss???
 # ground truth mask boolean
-NAME = 'Baseline_Sem_Seg'
+NAME = 'Baseline_Sem_Seg_Try_2'
 EPOCHS = 11
-LEARNING_RATE = 1e-3  # 2e-4
+LEARNING_RATE = 1e-3
+CLIP_GRADIENTS = 0.5
 
 # save predictions of each valid sample here
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME)
@@ -57,14 +58,16 @@ for fold, sample in enumerate(samples):
         precision='16-mixed',
         logger=logger,
         max_epochs=EPOCHS,
+        #gradient_clip_val=CLIP_GRADIENTS,
+        #gradient_clip_algorithm='value'
         #callbacks=[lr_monitor],
     )
 
     trainer.fit(model=nn, datamodule=data_module)
 
-    valid_dice_values.append(nn.valid_dice)
+    valid_dice_values.append(nn.valid_dice_weighted)
 
-    print(f'Valid Dice Score: {nn.valid_dice}')
+    print(f'Valid Dice Score: {nn.valid_dice_weighted}')
 
     # now save the prediction from the validation sample
     tuple_save = (nn.valid_pred_volume, nn.valid_target_volume, nn.start_z, nn.start_xy)
@@ -74,7 +77,7 @@ for fold, sample in enumerate(samples):
         pickle.dump(tuple_save, f)
 
     # save weights
-    weights_filename = f'{NAME}_{fold}.pth'
+    weights_filename = f'{NAME}_Fold_{fold}.pth'
     path_weights = os.path.join(folder_weights, weights_filename)
 
     nn.cnn.to('cpu')
