@@ -7,11 +7,12 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from collections import deque
+from monai.transforms import Compose, RandFlipd, RandRotated, RandAffine
+import math
 
 ''''
 X, Y, Z coordinates have relevance to pdata.output_coordinatesrobability of each target???
-Validate only in center???
+UPSAMPLE IN FREQUENCY
 '''
 
 PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
@@ -114,13 +115,30 @@ for sample in samples:
             # add a tuple to the labels
             labels[sample].append((loc_x, loc_y, loc_z, classes[class_name]))
 
+# augmentations
+transform = Compose([
+    RandFlipd(keys=["image", "label"], spatial_axis=[0], prob=0.5),  # z
+    RandFlipd(keys=["image", "label"], spatial_axis=[1], prob=0.5),  # y
+    RandFlipd(keys=["image", "label"], spatial_axis=[2], prob=0.5),  # x
+    RandRotated(
+        keys=["image", "label"],
+        range_x=(-math.pi, math.pi),  # this is actually z dim so rotate only the images essentially
+        range_y=0,
+        range_z=0,
+        prob=1,
+        mode=["bilinear", "nearest"],
+        padding_mode='zeros'
+    ),
+])
+
 # create a dataset that takes as input the samples to use (e.g. ['TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'] for train and ['TS_5_4'] for valid)
 # this way we can easily to a 7-fold-cv
 # for each volume (sample) crop out patches in the defined size and stride
 class Data(torch.utils.data.Dataset):
 
-    def __init__(self, sample_names):
+    def __init__(self, sample_names, transform=None):
         self.sample_names = sample_names
+        self.transform = transform
 
         # crop out patches from the volumes and the target volumes and append them to lists
         self.inputs = []
@@ -280,8 +298,23 @@ class Data(torch.utils.data.Dataset):
     
     def __getitem__(self, index):
 
-        vol = self.inputs[index]
-        segmentation_mask = self.outputs[index]
+        vol = self.inputs[index]  # (z, y, x)
+        segmentation_mask = self.outputs[index]  # (n_channels, z, y, x)
+
+        # for monai augmentation to work the shapes need to match; add channel for input
+        vol = np.expand_dims(vol, axis=0)
+
+        # augment volume and targetif specified
+        if self.transform is not None:
+
+            data = {
+                "image": vol,
+                "label": segmentation_mask
+            }
+
+            augmented_data = self.transform(data)
+            vol = augmented_data["image"]
+            segmentation_mask = augmented_data["label"]
 
         # normalize the inputs to mean 0 std 1
         try:
@@ -296,7 +329,7 @@ class Data(torch.utils.data.Dataset):
         # get patch coordinates (z, y, x)
         patch_coord = self.patch_coords[index]
         
-        vol = torch.Tensor(vol).unsqueeze(0).type(torch.float32)  # add channel dim
+        vol = torch.Tensor(vol).type(torch.float32)
         segmentation_mask = torch.Tensor(segmentation_mask).type(torch.float32)
         patch_coord = torch.Tensor(patch_coord).type(torch.float32)
 
@@ -311,7 +344,8 @@ class LightningData(pl.LightningDataModule):
         valid_samples,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
-        pin_memory=PIN_MEMORY
+        pin_memory=PIN_MEMORY,
+        transform=transform
         ):
 
         super().__init__()
@@ -321,10 +355,11 @@ class LightningData(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.transform = transform
 
     def setup(self, stage):
         
-        self.ds_train = Data(sample_names=self.train_samples)
+        self.ds_train = Data(sample_names=self.train_samples, transform=self.transform)
         self.ds_valid = Data(sample_names=self.valid_samples)
 
     def train_dataloader(self):
@@ -356,9 +391,12 @@ class LightningData(pl.LightningDataModule):
 
 if __name__ == '__main__':
     
-    data = Data(sample_names=['TS_5_4'])  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
+    data = Data(sample_names=['TS_5_4'], transform=transform)  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
+
+    _ = data.__getitem__(0)
     
-    for i in range(100):
+    
+    '''for i in range(100):
         input_, segmentation_mask, coords = data.__getitem__(i)
 
         input_ = input_.squeeze(0).numpy()
@@ -376,7 +414,7 @@ if __name__ == '__main__':
                     ax[c].axis('off')
                 plt.show()
 
-            break
+            break'''
     '''for ix in range(0, len(data.inputs), 10):
         i, mask, _ = data.__getitem__(ix)
 

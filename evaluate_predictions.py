@@ -14,7 +14,7 @@ from competition_metric import *
 
 '''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER'''
 
-NAME_RUN = 'Baseline_Sem_Seg_Try_2'
+NAME_RUN = 'Flipping_ZYX_Rotate_YX'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5
@@ -157,7 +157,7 @@ for c in tqdm(range(1, 6)):
 
     # loop over all samples and the predictions for this class
     for index in range(len(sample_names)):
-        print(index, ' / ', len(sample_names))
+        print(index + 1, ' / ', len(sample_names))
         sample = sample_names[index]
 
         scale_z, scale_y, scale_x = scale_values[index]

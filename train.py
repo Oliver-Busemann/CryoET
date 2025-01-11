@@ -9,8 +9,8 @@ import pickle
 
 # samples with no targets -> diceloss???
 # ground truth mask boolean
-NAME = 'Baseline_Sem_Seg_Try_2'
-EPOCHS = 11
+NAME = 'Flipping_ZYX_Rotate_YX'
+EPOCHS = 10
 LEARNING_RATE = 1e-3
 CLIP_GRADIENTS = 0.5
 
