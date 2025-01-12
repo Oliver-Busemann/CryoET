@@ -123,13 +123,13 @@ transform = Compose([
     RandRotated(
         keys=["image", "label"],
         range_x=(-math.pi, math.pi),  # this is actually z dim so rotate only the images essentially
-        range_y=0,
-        range_z=0,
+        range_y=(-math.pi, math.pi),  # 0,
+        range_z=(-math.pi, math.pi),  # 0,
         prob=1,
         mode=["bilinear", "nearest"],
         padding_mode='zeros'
     ),
-    RandGaussianNoised(keys=["image"], mean=0.0, std=0.10),
+    RandGaussianNoised(keys=["image"], mean=0.0, std=0.075),
     RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
     RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), prob=0.5)
 
@@ -170,7 +170,7 @@ class Data(torch.utils.data.Dataset):
         self.calculate_equal_weights()
 
         # calculate sampler weights
-        self.calculate_sampler_weights()
+        self.sampler_weights = self.calculate_sampler_weights()
 
     def create_patches(self):
 
@@ -298,18 +298,85 @@ class Data(torch.utils.data.Dataset):
 
     # each class should be 
     def calculate_sampler_weights(self):
+
+        print('Calculating sampler weights')
         
         # append the weights for the sampler here, absolute values dont matter only relative
         sampler_weights = []
-        
+
+        background_count = []  # when no target is present
+        apo_count = []
+        beta_count = []
+        ribosome_count = []
+        thyro_count = []
+        virus_count = []
+
+        class_counts = [apo_count, beta_count, ribosome_count, thyro_count, virus_count]
+
+        # number of voxels that must be present for the class to be counted as one
+        # this is approximately 20% of the full target
+        thresholds = [math.pi / 6 * (class_num_radius[c] * 2)**3 * 0.2 for c in range(1, 6)]  # 20% of full volume is the threshold
+
         # loop over all shuffled outputs (targets) and count if the inner cube has a target of any of the 5 classes (use min voxels)
         for output in self.outputs:
 
             # output is shape (6, PATCH_SIZE, PATCH_SIZE, PATCH_SIZE)
             # first crop out the inner cube thats used
             output = output[:, 12: -12, 12: -12, 12: -12]
-            print(output.shape)
-            break
+
+            output_counts = output.sum(axis=(1, 2, 3))  # shape (6,)
+
+            # for knowing if only background is present based on thresholds and counts
+            no_class_count = 0
+                    
+            for threshold, count, counter in zip(thresholds, output_counts[1:], class_counts):
+                
+                # add a 1 to the class counter if threshold is surpassed
+                if count > threshold:
+
+                    counter.append(1)
+                
+                # add a 0 if the class is not present
+                else:
+                    counter.append(0)
+
+                    no_class_count += 1
+
+            if no_class_count == 5:
+                background_count.append(1)
+            
+            else:
+                background_count.append(0)
+
+        # sums for all samples: 271 - 150 - 271 - 285 - 178
+        
+        # now upsample all the classes in a way that each is seen equally often as only_background samples
+        weights = [sum(background_count) / sum(class_count) for class_count in class_counts]
+
+        # now loop over all the counters and assing each instance a weight
+        for i in range(len(background_count)):
+
+            # background has a weight of 1
+            if background_count[i] == 1:
+                sampler_weights.append(1)
+
+            else:
+
+                # if there are multiple classes present take the average
+                current_weights = []
+
+                for ix, class_count in enumerate(class_counts):
+                    
+                    # if the class is present then use the weight
+                    if class_count[i] == 1:
+                        current_weights.append(weights[ix])
+
+                # add the mean of all present class weights
+                mean_current_weights = sum(current_weights) / len(current_weights)
+
+                sampler_weights.append(mean_current_weights)
+
+        return sampler_weights
 
     def __len__(self):
         return len(self.inputs)
