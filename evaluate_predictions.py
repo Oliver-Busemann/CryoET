@@ -12,9 +12,11 @@ import concurrent.futures
 from competition_metric import *
 
 
-'''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER'''
+'''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER
+FILTER OUT BASED ON Z VALUE!
+Remove too small or large components!'''
 
-NAME_RUN = 'Flipping_ZYX_Rotate_YX'
+NAME_RUN = 'GAUSSIAN_NOISE_STD_0.1'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5

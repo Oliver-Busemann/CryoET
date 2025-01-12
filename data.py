@@ -7,7 +7,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from monai.transforms import Compose, RandFlipd, RandRotated, RandAffine
+from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd
 import math
 
 ''''
@@ -68,7 +68,7 @@ class_radiuses = {
 #}
 
 class_num_radius = {
-    1: 6,
+    1: 5,
     2: 6,
     3: 10,
     4: 6,
@@ -129,6 +129,10 @@ transform = Compose([
         mode=["bilinear", "nearest"],
         padding_mode='zeros'
     ),
+    RandGaussianNoised(keys=["image"], mean=0.0, std=0.10),
+    RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
+    RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), prob=0.5)
+
 ])
 
 # create a dataset that takes as input the samples to use (e.g. ['TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'] for train and ['TS_5_4'] for valid)
@@ -165,27 +169,26 @@ class Data(torch.utils.data.Dataset):
         # calculate weights before training
         self.calculate_equal_weights()
 
+        # calculate sampler weights
+        self.calculate_sampler_weights()
+
     def create_patches(self):
 
         # create patches for all samples
         for sample_name in self.sample_names:
 
             # shapes of the volumes are (184, 630, 630)
-            # now find the final dimensions that make each dim perfectly dividable by the PATCH_SIZE and add half the PATCH_SIZE for the borders
-            dim_z = 184 // PATCH_SIZE * PATCH_SIZE
-            rest_z = 184 % PATCH_SIZE
-            if rest_z < (PATCH_SIZE / 2):  # one additional PATCH_SIZE is enough
-                dim_z += PATCH_SIZE
-            else:
-                dim_z += 2 * PATCH_SIZE
+            # now find the final dimensions that makes each dim perfectly dividable by the PATCH_SIZE/STRIDE
+            relevant_patch_size = PATCH_SIZE * STRIDE  # inner cube size thats used for train and prediction
 
-            # x-y are the same
-            dim_xy = 630 // PATCH_SIZE * PATCH_SIZE
-            rest_xy = 630 % PATCH_SIZE
-            if rest_xy < (PATCH_SIZE / 2):
-                dim_xy += PATCH_SIZE
-            else:
-                dim_xy += 2 * PATCH_SIZE
+            # 184 must fit in ?-times relevant_patch_size; also add the border of (96 - 72) / 2
+            dim_z = round(184 / relevant_patch_size, 0) * relevant_patch_size # rounded up
+            dim_z += (1 - STRIDE) * PATCH_SIZE  # for the border on 2 sides!
+            dim_z = int(dim_z)
+
+            dim_xy = round(630 / relevant_patch_size, 0) * relevant_patch_size
+            dim_xy += (1 - STRIDE) * PATCH_SIZE
+            dim_xy = int(dim_xy)
 
             # now place the volume in a larger empty one such that the boarders are added
             # calculate the starting points where to insert it first
@@ -230,7 +233,7 @@ class Data(torch.utils.data.Dataset):
                         self.inputs.append(current_input)
                         self.outputs.append(current_output)
                         self.patch_coords.append([z, y, x])
-
+        
         # same for all samples
         self.start_z = start_z
         self.start_xy = start_xy
@@ -292,6 +295,21 @@ class Data(torch.utils.data.Dataset):
 
         # finally assign it
         self.weights_cross_entropy = torch.Tensor(class_weights).type(torch.float32)
+
+    # each class should be 
+    def calculate_sampler_weights(self):
+        
+        # append the weights for the sampler here, absolute values dont matter only relative
+        sampler_weights = []
+        
+        # loop over all shuffled outputs (targets) and count if the inner cube has a target of any of the 5 classes (use min voxels)
+        for output in self.outputs:
+
+            # output is shape (6, PATCH_SIZE, PATCH_SIZE, PATCH_SIZE)
+            # first crop out the inner cube thats used
+            output = output[:, 12: -12, 12: -12, 12: -12]
+            print(output.shape)
+            break
 
     def __len__(self):
         return len(self.inputs)
@@ -390,6 +408,8 @@ class LightningData(pl.LightningDataModule):
 
 
 if __name__ == '__main__':
+
+
     
     data = Data(sample_names=['TS_5_4'], transform=transform)  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
 

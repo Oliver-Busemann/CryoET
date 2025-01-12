@@ -8,11 +8,11 @@ import gc
 import pickle
 
 # samples with no targets -> diceloss???
-# ground truth mask boolean
-NAME = 'Flipping_ZYX_Rotate_YX'
-EPOCHS = 10
+NAME = 'GAUSSIAN_NOISE_STD_0.1'
+TRAIN_FULL = False  # False: train on all 7 folds once; True: do 7-fold-cv
+EPOCHS = 11
 LEARNING_RATE = 1e-3
-CLIP_GRADIENTS = 0.5
+
 
 # save predictions of each valid sample here
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME)
@@ -27,11 +27,18 @@ valid_dice_values = []
 # loop over all 7 samples and perform 7-fold-cv
 for fold, sample in enumerate(samples):
 
-    print(f'============================================================= Fold {fold + 1} / {len(samples)} =============================================================')
-
     valid_samples = [sample]
     train_samples = deepcopy(samples)
-    train_samples.remove(sample)
+
+    if TRAIN_FULL != True:
+
+        print(f'============================================================= Fold {fold + 1} / {len(samples)} =============================================================')
+        
+        train_samples.remove(sample) # when performing cv drop the validation fold
+
+    else:
+        NAME = 'Trained_FULL_' + NAME
+
 
     data_module = LightningData(
         train_samples=train_samples,
@@ -58,8 +65,6 @@ for fold, sample in enumerate(samples):
         precision='16-mixed',
         logger=logger,
         max_epochs=EPOCHS,
-        #gradient_clip_val=CLIP_GRADIENTS,
-        #gradient_clip_algorithm='value'
         #callbacks=[lr_monitor],
     )
 
@@ -90,6 +95,9 @@ for fold, sample in enumerate(samples):
 
     gc.collect()
     torch.cuda.empty_cache()
+    
+    if TRAIN_FULL:
+        break
 
 
 cv_score = sum(valid_dice_values) / len(valid_dice_values)

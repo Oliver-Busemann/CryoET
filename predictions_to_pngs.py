@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
-NAME_RUN = 'Ratio_0.75_LR1e-3_EPOCHS10_CHANNELS_32_64_128_256_512_STRIDES_2_2_1_1_NoBgDice'
+NAME_RUN = 'PATCHES_CORRECT_Flipping_ZYX_Rotate_Z_IntensityNoise_Radius_Apo_5'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
