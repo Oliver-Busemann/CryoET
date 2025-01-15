@@ -7,12 +7,13 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd
+from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd, RandCoarseDropoutd
 import math
 
 ''''
 X, Y, Z coordinates have relevance to pdata.output_coordinatesrobability of each target???
-UPSAMPLE IN FREQUENCY
+AUG
+Upsample more then bg
 '''
 
 PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
@@ -123,15 +124,23 @@ transform = Compose([
     RandRotated(
         keys=["image", "label"],
         range_x=(-math.pi, math.pi),  # this is actually z dim so rotate only the images essentially
-        range_y=(-math.pi, math.pi),  # 0,
-        range_z=(-math.pi, math.pi),  # 0,
+        range_y=0,
+        range_z=0,
         prob=1,
         mode=["bilinear", "nearest"],
         padding_mode='zeros'
     ),
     RandGaussianNoised(keys=["image"], mean=0.0, std=0.075),
     RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
-    RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), prob=0.5)
+    RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), prob=0.5),
+    RandCoarseDropoutd(
+        keys=["image", "label"],
+        holes=3,
+        spatial_size=(12, 12, 12),
+        max_holes=6,
+        fill_value=0,
+        prob=0.5
+    )
 
 ])
 
@@ -298,8 +307,6 @@ class Data(torch.utils.data.Dataset):
 
     # each class should be 
     def calculate_sampler_weights(self):
-
-        print('Calculating sampler weights')
         
         # append the weights for the sampler here, absolute values dont matter only relative
         sampler_weights = []
@@ -352,6 +359,10 @@ class Data(torch.utils.data.Dataset):
         
         # now upsample all the classes in a way that each is seen equally often as only_background samples
         weights = [sum(background_count) / sum(class_count) for class_count in class_counts]
+
+        # upsample beta and thyro twice as much
+        #weights[1] *= 2
+        #weights[3] *= 2
 
         # now loop over all the counters and assing each instance a weight
         for i in range(len(background_count)):
@@ -449,10 +460,12 @@ class LightningData(pl.LightningDataModule):
 
     def train_dataloader(self):
 
+        # use weightedsampler
         dl_train = torch.utils.data.DataLoader(
             dataset=self.ds_train,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=False,  # False when using sampler
+            sampler=torch.utils.data.WeightedRandomSampler(weights=self.ds_train.sampler_weights, num_samples=len(self.ds_train.sampler_weights), replacement=True),
             num_workers=self.num_workers,
             pin_memory=self.pin_memory            
         )

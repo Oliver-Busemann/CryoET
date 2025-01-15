@@ -7,8 +7,8 @@ from model import *
 import gc
 import pickle
 
-# samples with no targets -> diceloss???
-NAME = 'GAUSSIAN_NOISE_STD_0.1'
+
+NAME = 'WeightedSampler_RandCoarseDropoutd'
 TRAIN_FULL = False  # False: train on all 7 folds once; True: do 7-fold-cv
 EPOCHS = 11
 LEARNING_RATE = 1e-3
@@ -37,6 +37,9 @@ for fold, sample in enumerate(samples):
         train_samples.remove(sample) # when performing cv drop the validation fold
 
     else:
+
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> TRAIN FULL <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+
         NAME = 'Trained_FULL_' + NAME
 
 

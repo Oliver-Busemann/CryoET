@@ -7,7 +7,7 @@ from monai.losses import DiceLoss, TverskyLoss
 
 '''Macro Average Dice -> No Divergence?!
 Punish overlap in loss?
-Experiment with dynamic weighting strategies or loss functions that directly target recall (e.g., Tversky loss or focal loss with recall emphasis)
+Other model
 '''
 RATIO_LOSSES = 0.75  # 0-1 (weight for crossentropy vs diceloss)
 INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be included for dice loss calculation
@@ -40,8 +40,8 @@ class NN(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weights_cross_entropy = weights_cross_entropy.to('cuda:0')
         self.ratio_losses = ratio_losses
-        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')  # , weight=torch.Tensor([1, 2, 1, 2, 1]).to('cuda:0'))
-        #self.diceloss = TverskyLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', alpha=0.2, beta=0.8)
+        self.diceloss = DiceLoss(include_background=True, softmax=False, reduction='mean')  # , weight=torch.Tensor([0.2, 1, 1, 1, 1, 1]).to('cuda:0'))
+        #self.tverskyloss = TverskyLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', alpha=0.2, beta=0.8)
         self.mask_loss, self.ignore_size = self.create_mask_loss(stride=stride, patch_size=patch_size)
 
         self.drop_rate=drop_rate
@@ -194,36 +194,6 @@ class NN(pl.LightningModule):
 
     def training_step(self, batch, batch_ix):
 
-        '''inputs, targets, _ = batch
-
-        preds = self.forward(inputs)
-
-        # add the batch size to the mask; currently shape (patch_size, patch_size, patch_size)
-        batch_size = preds.size()[0]
-        mask = self.mask_loss.clone()
-        mask = mask.unsqueeze(0).repeat(batch_size, 1, 1, 1)  # shape (batch_size, patch_size, patch_size, patch_size)
-
-        # mask the preds and targets, create integer classes instead of onehots, calculate loss and divide it by the number of valid voxels
-        masked_targets = torch.argmax(targets, dim=1) * mask
-        masked_preds = preds * mask.unsqueeze(1)  # add channel dim
-        
-        # cross entropy loss wont work with onehot targets
-        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), reduction='sum')  # ,weight=self.weights_cross_entropy, reduction='sum')
-        cross_entropy_loss = cross_entropy_loss / mask.sum() / 6  # normalize the loss; mask has not 6 channels
-        
-        # dice expects softmax not logits and onehot targets
-        preds_sm = F.softmax(preds, dim=1)
-
-        # also apply mask
-        masked_preds_sm = preds_sm * mask.unsqueeze(1)
-        masked_targets_onehot = targets * mask.unsqueeze(1)
-        
-        dice_loss = self.diceloss(masked_preds_sm, masked_targets_onehot)  # applying sm internally would mess up the masked regions!
-
-        total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
-        
-        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus, mean_dice_weighted = self.calculate_IoU_Dice_scores(preds_sm, targets)'''
-
         # calculate losses and metrics
         (
             total_loss, cross_entropy_loss, dice_loss, mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase,
@@ -260,36 +230,6 @@ class NN(pl.LightningModule):
         return total_loss
     
     def validation_step(self, batch, batch_ix):
-
-        '''inputs, targets, patch_coords = batch
-
-        preds = self.forward(inputs)
-
-        # add the batch size to the mask; currently shape (patch_size, patch_size, patch_size)
-        batch_size = preds.size()[0]
-        mask = self.mask_loss.clone()
-        mask = mask.unsqueeze(0).repeat(batch_size, 1, 1, 1)  # shape (batch_size, patch_size, patch_size, patch_size)
-
-        # mask the preds and targets, create integer classes instead of onehots, calculate loss and divide it by the number of valid voxels
-        masked_targets = torch.argmax(targets, dim=1) * mask
-        masked_preds = preds * mask.unsqueeze(1)  # add channel dim
-
-        # cross entropy loss wont work with onehot targets
-        cross_entropy_loss = F.cross_entropy(masked_preds, masked_targets.long(), reduction='sum')  # ,weight=self.weights_cross_entropy, reduction='sum')
-        cross_entropy_loss = cross_entropy_loss / mask.sum() / 6  # normalize the loss; mask has not 6 channels
-
-        # dice expects softmax not logits and onehot targets
-        preds_sm = F.softmax(preds, dim=1)
-
-        # also apply mask
-        masked_preds_sm = preds_sm * mask.unsqueeze(1)
-        masked_targets_onehot = targets * mask.unsqueeze(1)
-
-        dice_loss = self.diceloss(masked_preds_sm, masked_targets_onehot)
-
-        total_loss = cross_entropy_loss * self.ratio_losses + dice_loss * (1 - self.ratio_losses)
-
-        mean_iou, mean_iou_no_background, iou_background, iou_apo_ferritin, iou_beta_galactosidase, iou_ribosome, iou_thyroglobulin, iou_virus, mean_dice, mean_dice_no_background, dice_background, dice_apo_ferritin, dice_beta_galactosidase, dice_ribosome, dice_thyroglobulin, dice_virus, mean_dice_weighted = self.calculate_IoU_Dice_scores(preds_sm, targets)'''
 
         # calculate losses and metrics
         (

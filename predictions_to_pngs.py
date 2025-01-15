@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
-NAME_RUN = 'PATCHES_CORRECT_Flipping_ZYX_Rotate_Z_IntensityNoise_Radius_Apo_5'
+NAME_RUN = 'WeightedSampler_Tversky_Beta08'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'

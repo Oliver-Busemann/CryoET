@@ -10,24 +10,28 @@ import json
 from scipy.ndimage import center_of_mass
 import concurrent.futures
 from competition_metric import *
+from data import class_num_radius
+import math
 
 
 '''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER
-FILTER OUT BASED ON Z VALUE!
-Remove too small or large components!'''
+Remove large components too?
+FILTER ON OTHER METRICS!! (aspect ratio or intensity values)'''
 
-NAME_RUN = 'GAUSSIAN_NOISE_STD_0.1'
+NAME_RUN = 'WeightedSampler'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5
+FRACTION_VOL_CORRECT = 0.1  # if a connected component is e.g. half of a mask from that class discard the prediction
+
+
+def sphere_voxels(radius):
+    return int(math.pi * 4 / 3 * (radius * RESIZE_FACTOR_CC)**3)
 
 # for cc3d.dust(labels, threshold=min_size)
-MIN_THRESHOLD_1 = None
-MIN_THRESHOLD_2 = None
-MIN_THRESHOLD_3 = None
-MIN_THRESHOLD_4 = None
-MIN_THRESHOLD_5 = None
+thresholds = {c: sphere_voxels(class_num_radius[c] * FRACTION_VOL_CORRECT) for c in range(1, 6)}
 
+print(thresholds)
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
 folder_volumes = os.path.join(folder_data, 'static', 'ExperimentRuns')
@@ -155,11 +159,14 @@ results = []
 for c in tqdm(range(1, 6)):
     
     print('Pocessing class ', c)
+
     class_name = num_to_class[c]
 
     # loop over all samples and the predictions for this class
     for index in range(len(sample_names)):
+
         print(index + 1, ' / ', len(sample_names))
+
         sample = sample_names[index]
 
         scale_z, scale_y, scale_x = scale_values[index]
@@ -170,11 +177,19 @@ for c in tqdm(range(1, 6)):
         # find connected components; this is an array with the same shape that has unique values for each component (0 is background)
         pred_class_sample_components = cc3d.connected_components(pred_class_sample, connectivity=CONNECTIVITY)
 
+        #print(f'\nCLASS: {c} - TH: {thresholds[c]}\n')
+        #for value in np.unique(pred_class_sample_components):
+        #    if value != 0:
+        #        tmp = pred_class_sample_components == value
+        #        print(tmp.sum())
+
+        # filter out components that are smaller the the defined threshold
+        pred_class_sample_components = cc3d.dust(pred_class_sample_components, threshold=thresholds[c])
+
+        # get unique values and remove background class
         unique_values = np.unique(pred_class_sample_components)
         unique_values = unique_values[unique_values != 0]
-
-        # for each unique value find the center of this connected component and add it to the pred df
-
+        
         # create function inputs
         args = [(pred_class_sample_components, unique_value, class_name, sample, scale_z, scale_y, scale_x) for unique_value in unique_values]
 
