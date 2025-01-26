@@ -4,20 +4,22 @@ import pytorch_lightning as pl
 import monai
 from torchinfo import summary
 from monai.losses import DiceLoss, TverskyLoss
+from torch.optim.lr_scheduler import OneCycleLR
 
 '''Macro Average Dice -> No Divergence?!
 Punish overlap in loss?
 Other model
+LOSS FOR METRIC
 '''
 RATIO_LOSSES = 0.75  # 0-1 (weight for crossentropy vs diceloss)
 INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be included for dice loss calculation
 
 DROP_RATE = 0.2
-CHANNELS = (32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
+CHANNELS =(32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
 STRIDES = (2, 2, 1, 1)  # (2, 2, 1, 1)
+NUM_RES_UNITS = 0
 
 assert len(CHANNELS) == len(STRIDES) + 1
-
 
 
 class NN(pl.LightningModule):
@@ -33,6 +35,7 @@ class NN(pl.LightningModule):
             drop_rate=DROP_RATE,
             channels=CHANNELS,
             strides=STRIDES,
+            num_res_units=NUM_RES_UNITS
             ):
 
         super().__init__()
@@ -40,7 +43,7 @@ class NN(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weights_cross_entropy = weights_cross_entropy.to('cuda:0')
         self.ratio_losses = ratio_losses
-        self.diceloss = DiceLoss(include_background=True, softmax=False, reduction='mean')  # , weight=torch.Tensor([0.2, 1, 1, 1, 1, 1]).to('cuda:0'))
+        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')  # , weight=torch.Tensor([0.2, 1, 1, 1, 1, 1]).to('cuda:0'))
         #self.tverskyloss = TverskyLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', alpha=0.2, beta=0.8)
         self.mask_loss, self.ignore_size = self.create_mask_loss(stride=stride, patch_size=patch_size)
 
@@ -55,8 +58,18 @@ class NN(pl.LightningModule):
             channels=self.channels,
             strides=self.strides,
             dropout=self.drop_rate,
+            num_res_units=num_res_units
         )
 
+        '''self.cnn = monai.networks.nets.AttentionUnet(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=6,
+        channels=CHANNELS,
+        strides=STRIDES,
+        dropout=DROP_RATE
+        )'''
+        
         self.valid_dice_weighted = []
 
         # assign predictions of last epoch here
@@ -307,31 +320,44 @@ class NN(pl.LightningModule):
         
         optim = torch.optim.Adam(self.cnn.parameters(), lr=self.learning_rate)
 
-        return optim
+        lr_scheduler = {
+            'scheduler': OneCycleLR(
+                optimizer=optim,
+                max_lr=self.learning_rate,
+                epochs=self.trainer.max_epochs,
+                steps_per_epoch=1
+                ),
+            'name': 'Learning Rate'
+            }
+
+        return [optim], [lr_scheduler]
     
 
 
         
 if __name__ == '__main__':
-
-    '''cnn = SRN(
-        spatial_dims=3,  # 3d inputs
-        init_filters=32,  # filters of first conv layer
-        in_channels=1,  # one channel inputs
-        out_channels=6,
-        dropout_prob=DROP_RATE,
-        blocks_down=BLOCKS_DOWN,
-        blocks_up=BLOCKS_UP,
-    )'''
-
-    cnn = monai.networks.nets.UNet(
+    
+    '''cnn = monai.networks.nets.UNet(
         spatial_dims=3,
         in_channels=1,
         out_channels=6,
         channels=CHANNELS,
         strides=STRIDES,
         dropout=DROP_RATE
-    )
+    )'''
+
+    '''cnn = monai.networks.nets.AttentionUnet(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=6,
+        channels=CHANNELS,
+        strides=STRIDES,
+        dropout=DROP_RATE
+    )'''
+
+    cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=16)   # depths=(1, 1, 1, 1))   # num_heads=(3, 4, 8, 12))
+
+    #cnn = monai.networks.nets.SEResNext50(spatial_dims=3, in_channels=1)
 
     exp_input = torch.zeros(4, 1, 96, 96, 96)
     print(summary(cnn, input_data=exp_input))

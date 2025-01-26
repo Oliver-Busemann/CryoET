@@ -10,18 +10,13 @@ import random
 from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd, RandCoarseDropoutd
 import math
 
-''''
-X, Y, Z coordinates have relevance to pdata.output_coordinatesrobability of each target???
-AUG
-Upsample more then bg
-'''
 
 PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
 STRIDE = 0.75  # stride when cropping out patches ()
 assert (1 - STRIDE) * PATCH_SIZE % 2 == 0
 BATCH_SIZE = 4
-NUM_WORKERS=16
-PIN_MEMORY=False
+NUM_WORKERS = 16
+PIN_MEMORY = False
 
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
 folder_volumes = os.path.join(folder_data, 'static', 'ExperimentRuns')
@@ -131,16 +126,16 @@ transform = Compose([
         padding_mode='zeros'
     ),
     RandGaussianNoised(keys=["image"], mean=0.0, std=0.075),
-    RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
-    RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), prob=0.5),
-    RandCoarseDropoutd(
-        keys=["image", "label"],
-        holes=3,
-        spatial_size=(12, 12, 12),
-        max_holes=6,
-        fill_value=0,
-        prob=0.5
-    )
+    #RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
+    #RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), sigma_y=(0.5, 1.5), sigma_z=(0.5, 1.5), prob=0.5),
+    #RandCoarseDropoutd(
+    #    keys=["image", "label"],
+    #    holes=3,
+    #    spatial_size=(12, 12, 12),
+    #    max_holes=6,
+    #    fill_value=0,
+    #    prob=0.5
+    #)
 
 ])
 
@@ -363,6 +358,7 @@ class Data(torch.utils.data.Dataset):
         # upsample beta and thyro twice as much
         #weights[1] *= 2
         #weights[3] *= 2
+        #weights = [weight * 0.5 for weight in weights]
 
         # now loop over all the counters and assing each instance a weight
         for i in range(len(background_count)):

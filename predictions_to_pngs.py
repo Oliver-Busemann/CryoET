@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
-NAME_RUN = 'WeightedSampler_Tversky_Beta08'
+NAME_RUN = 'LR_Scheduler_EPOCHS_15'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'

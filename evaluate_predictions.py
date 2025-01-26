@@ -14,15 +14,15 @@ from data import class_num_radius
 import math
 
 
-'''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER
+'''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER - Distance-Based Splitting Using Watershed
 Remove large components too?
 FILTER ON OTHER METRICS!! (aspect ratio or intensity values)'''
 
-NAME_RUN = 'WeightedSampler'
+NAME_RUN = 'LR_Scheduler_EPOCHS_20_NoBright_NumRes_0'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5
-FRACTION_VOL_CORRECT = 0.1  # if a connected component is e.g. half of a mask from that class discard the prediction
+FRACTION_VOL_CORRECT = 0.5  # if a connected component is e.g. half of a mask from that class discard the prediction
 
 
 def sphere_voxels(radius):
@@ -31,7 +31,6 @@ def sphere_voxels(radius):
 # for cc3d.dust(labels, threshold=min_size)
 thresholds = {c: sphere_voxels(class_num_radius[c] * FRACTION_VOL_CORRECT) for c in range(1, 6)}
 
-print(thresholds)
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
 folder_volumes = os.path.join(folder_data, 'static', 'ExperimentRuns')

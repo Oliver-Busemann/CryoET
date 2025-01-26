@@ -6,11 +6,12 @@ from data import *
 from model import *
 import gc
 import pickle
+from pytorch_lightning.callbacks import LearningRateMonitor
 
 
-NAME = 'WeightedSampler_RandCoarseDropoutd'
+NAME = 'LR_Scheduler_EPOCHS_20_NoBright_NumRes_0'
 TRAIN_FULL = False  # False: train on all 7 folds once; True: do 7-fold-cv
-EPOCHS = 11
+EPOCHS = 20
 LEARNING_RATE = 1e-3
 
 
@@ -20,7 +21,7 @@ os.makedirs(folder_predictions, exist_ok=True)
 folder_weights = os.path.join('/home/olli/Projects/Kaggle/CryoET/Weights', NAME)
 os.makedirs(folder_weights, exist_ok=True)
 
-torch.set_float32_matmul_precision('medium')
+torch.set_float32_matmul_precision('high') if TRAIN_FULL else torch.set_float32_matmul_precision('medium')
 
 valid_dice_values = []
 
@@ -62,13 +63,15 @@ for fold, sample in enumerate(samples):
         version=f'Fold_{fold}'
         )
     
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    
     trainer = pl.Trainer(
         accelerator='gpu',
         devices=[0],
         precision='16-mixed',
         logger=logger,
         max_epochs=EPOCHS,
-        #callbacks=[lr_monitor],
+        callbacks=[lr_monitor],
     )
 
     trainer.fit(model=nn, datamodule=data_module)
