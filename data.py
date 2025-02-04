@@ -9,11 +9,14 @@ import matplotlib.pyplot as plt
 import random
 from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd, RandCoarseDropoutd
 import math
+from tqdm import tqdm
 
-
-PATCH_SIZE = 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
+'''
+AUG ONLY HORZ FLIP'''
+PATCH_SIZE = 128  # 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
 STRIDE = 0.75  # stride when cropping out patches ()
 assert (1 - STRIDE) * PATCH_SIZE % 2 == 0
+TRAIN_STRIDE = 32 # 32  # None: Use same stride as above; if specified use different stride for creating training patches (more) - idea: create same number of samples like with 96 and 0.75
 BATCH_SIZE = 4
 NUM_WORKERS = 16
 PIN_MEMORY = False
@@ -144,9 +147,10 @@ transform = Compose([
 # for each volume (sample) crop out patches in the defined size and stride
 class Data(torch.utils.data.Dataset):
 
-    def __init__(self, sample_names, transform=None):
+    def __init__(self, sample_names, transform=None, train_stride=None):
         self.sample_names = sample_names
         self.transform = transform
+        self.train_stride = train_stride
 
         # crop out patches from the volumes and the target volumes and append them to lists
         self.inputs = []
@@ -171,7 +175,7 @@ class Data(torch.utils.data.Dataset):
         self.weights_cross_entropy = torch.ones(size=(6,))
 
         # calculate weights before training
-        self.calculate_equal_weights()
+        #self.calculate_equal_weights()
 
         # calculate sampler weights
         self.sampler_weights = self.calculate_sampler_weights()
@@ -224,12 +228,16 @@ class Data(torch.utils.data.Dataset):
             
             # add the label for the background class
             volume_target[0] = (np.sum(volume_target[1:6], axis=0) == 0)
+
+            step_crop = int(PATCH_SIZE * STRIDE) if TRAIN_STRIDE is None else TRAIN_STRIDE
+            assert step_crop == int(step_crop)
+            
             
             # now crop out all possible patches in the defined stride
-            for z in range(0, dim_z - PATCH_SIZE + 1, int(PATCH_SIZE * STRIDE)):
-                for y in range(0, dim_xy - PATCH_SIZE + 1, int(PATCH_SIZE * STRIDE)):
-                    for x in range(0, dim_xy - PATCH_SIZE + 1, int(PATCH_SIZE * STRIDE)):
-
+            for z in range(0, dim_z - PATCH_SIZE + 1, step_crop):
+                for y in range(0, dim_xy - PATCH_SIZE + 1, step_crop):
+                    for x in range(0, dim_xy - PATCH_SIZE + 1, step_crop):
+                        
                         current_input = volume_large[z: z + PATCH_SIZE, y: y + PATCH_SIZE, x: x + PATCH_SIZE]
                         current_output = volume_target[:, z: z + PATCH_SIZE, y: y + PATCH_SIZE, x: x + PATCH_SIZE]
                         
@@ -243,7 +251,7 @@ class Data(torch.utils.data.Dataset):
         self.start_xy = start_xy
         self.shape_z = dim_z
         self.shape_xy = dim_xy
-
+        
     # shuffle all cropped out patches/labels/start_coord the same way
     def shuffle_lists(self):
         
@@ -302,7 +310,9 @@ class Data(torch.utils.data.Dataset):
 
     # each class should be 
     def calculate_sampler_weights(self):
-        
+
+        print(f'Calculating WeightedRandomSampler Weights for {len(self.outputs)} samples...')
+
         # append the weights for the sampler here, absolute values dont matter only relative
         sampler_weights = []
 
@@ -315,16 +325,19 @@ class Data(torch.utils.data.Dataset):
 
         class_counts = [apo_count, beta_count, ribosome_count, thyro_count, virus_count]
 
+        # ignore masked border when counting
+        ignore_size = int((1 - STRIDE) * PATCH_SIZE / 2)
+
         # number of voxels that must be present for the class to be counted as one
         # this is approximately 20% of the full target
         thresholds = [math.pi / 6 * (class_num_radius[c] * 2)**3 * 0.2 for c in range(1, 6)]  # 20% of full volume is the threshold
 
         # loop over all shuffled outputs (targets) and count if the inner cube has a target of any of the 5 classes (use min voxels)
-        for output in self.outputs:
+        for output in tqdm(self.outputs):
 
             # output is shape (6, PATCH_SIZE, PATCH_SIZE, PATCH_SIZE)
             # first crop out the inner cube thats used
-            output = output[:, 12: -12, 12: -12, 12: -12]
+            output = output[:, ignore_size: -ignore_size, ignore_size: -ignore_size, ignore_size: -ignore_size]
 
             output_counts = output.sum(axis=(1, 2, 3))  # shape (6,)
 
@@ -437,7 +450,9 @@ class LightningData(pl.LightningDataModule):
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=PIN_MEMORY,
-        transform=transform
+        transform=transform,
+        train_stride=TRAIN_STRIDE,
+        train_full=False
         ):
 
         super().__init__()
@@ -448,10 +463,14 @@ class LightningData(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.transform = transform
+        self.train_stride = train_stride
+        self.sampler_len = 243 * 6 if train_full else 5 * 243
+
+        print(f'USING {self.sampler_len} SAMPLES per EPOCH!!!')
 
     def setup(self, stage):
         
-        self.ds_train = Data(sample_names=self.train_samples, transform=self.transform)
+        self.ds_train = Data(sample_names=self.train_samples, transform=self.transform, train_stride=self.train_stride)
         self.ds_valid = Data(sample_names=self.valid_samples)
 
     def train_dataloader(self):
@@ -461,7 +480,7 @@ class LightningData(pl.LightningDataModule):
             dataset=self.ds_train,
             batch_size=self.batch_size,
             shuffle=False,  # False when using sampler
-            sampler=torch.utils.data.WeightedRandomSampler(weights=self.ds_train.sampler_weights, num_samples=len(self.ds_train.sampler_weights), replacement=True),
+            sampler=torch.utils.data.WeightedRandomSampler(weights=self.ds_train.sampler_weights, replacement=True, num_samples=self.sampler_len),  # hard code old number fpr 96 patches  # len(self.ds_train.sampler_weights)),
             num_workers=self.num_workers,
             pin_memory=self.pin_memory            
         )
@@ -487,7 +506,7 @@ if __name__ == '__main__':
 
 
     
-    data = Data(sample_names=['TS_5_4'], transform=transform)  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
+    data = Data(sample_names=['TS_5_4', 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4'], transform=transform, train_stride=TRAIN_STRIDE)  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
 
     _ = data.__getitem__(0)
     

@@ -9,10 +9,10 @@ import pickle
 from pytorch_lightning.callbacks import LearningRateMonitor
 
 
-NAME = 'LR_Scheduler_EPOCHS_20_NoBright_NumRes_0'
-TRAIN_FULL = False  # False: train on all 7 folds once; True: do 7-fold-cv
-EPOCHS = 20
-LEARNING_RATE = 1e-3
+NAME = 'PATCH_SIZE_128_EPOCHS_100_LR_2e4_SameEpochSamples_TRAINSTRIDE_32'
+TRAIN_FULL = True  # False: train on all 7 folds once; True: do 7-fold-cv
+EPOCHS = 100
+LEARNING_RATE = 2e-4
 
 
 # save predictions of each valid sample here
@@ -49,7 +49,8 @@ for fold, sample in enumerate(samples):
         valid_samples=valid_samples,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
-        pin_memory=PIN_MEMORY
+        pin_memory=PIN_MEMORY,
+        train_full=TRAIN_FULL  # use number of samples for one epoch thats equal to 6 samples when training full
     )
 
     # call setup explicitly; this creates the datasets which is needed to assign loss weights in NN
@@ -98,6 +99,9 @@ for fold, sample in enumerate(samples):
     del trainer
     del nn
     del data_module
+    del logger
+    del lr_monitor
+    
 
     gc.collect()
     torch.cuda.empty_cache()

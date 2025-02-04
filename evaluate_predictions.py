@@ -18,7 +18,7 @@ import math
 Remove large components too?
 FILTER ON OTHER METRICS!! (aspect ratio or intensity values)'''
 
-NAME_RUN = 'LR_Scheduler_EPOCHS_20_NoBright_NumRes_0'
+NAME_RUN = 'LR_Scheduler_Best_PATCH_SIZE_128_FocalDiceLoss'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5

@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import monai
 from torchinfo import summary
-from monai.losses import DiceLoss, TverskyLoss
+from monai.losses import DiceLoss
 from torch.optim.lr_scheduler import OneCycleLR
 
 '''Macro Average Dice -> No Divergence?!
@@ -17,7 +17,7 @@ INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be includ
 DROP_RATE = 0.2
 CHANNELS =(32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
 STRIDES = (2, 2, 1, 1)  # (2, 2, 1, 1)
-NUM_RES_UNITS = 0
+NUM_RES_UNITS = 1
 
 assert len(CHANNELS) == len(STRIDES) + 1
 
@@ -43,7 +43,8 @@ class NN(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weights_cross_entropy = weights_cross_entropy.to('cuda:0')
         self.ratio_losses = ratio_losses
-        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')  # , weight=torch.Tensor([0.2, 1, 1, 1, 1, 1]).to('cuda:0'))
+        self.diceloss = DiceLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')#, weight=torch.Tensor([1, 2, 1, 1, 1]).to('cuda:0')) # , weight=torch.Tensor([0.2, 1, 1, 1, 1, 1]).to('cuda:0'))
+        #self.diceloss = DiceFocalLoss(include_background=include_background_diceloss, softmax=False, reduction='mean')  # , lambda_dice=0.5, lambda_focal=0.5)
         #self.tverskyloss = TverskyLoss(include_background=include_background_diceloss, softmax=False, reduction='mean', alpha=0.2, beta=0.8)
         self.mask_loss, self.ignore_size = self.create_mask_loss(stride=stride, patch_size=patch_size)
 
@@ -69,6 +70,8 @@ class NN(pl.LightningModule):
         strides=STRIDES,
         dropout=DROP_RATE
         )'''
+
+        '''self.cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=24, drop_rate=self.drop_rate, attn_drop_rate=0.2)'''
         
         self.valid_dice_weighted = []
 
@@ -355,7 +358,7 @@ if __name__ == '__main__':
         dropout=DROP_RATE
     )'''
 
-    cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=16)   # depths=(1, 1, 1, 1))   # num_heads=(3, 4, 8, 12))
+    cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=24)   # depths=(1, 1, 1, 1))   # num_heads=(3, 4, 8, 12))
 
     #cnn = monai.networks.nets.SEResNext50(spatial_dims=3, in_channels=1)
 
