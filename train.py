@@ -9,10 +9,10 @@ import pickle
 from pytorch_lightning.callbacks import LearningRateMonitor
 
 
-NAME = 'PATCH_SIZE_128_EPOCHS_100_LR_2e4_SameEpochSamples_TRAINSTRIDE_32'
-TRAIN_FULL = True  # False: train on all 7 folds once; True: do 7-fold-cv
-EPOCHS = 100
-LEARNING_RATE = 2e-4
+NAME = 'PATCH_SIZE_128_EPOCHS_40_LR5e4_TRAIN_STRIDE_32'
+TRAIN_FULL = False  # True: train on all 7 folds once - False: do 7-fold-cv
+EPOCHS = 40
+LEARNING_RATE = 5e-4
 
 
 # save predictions of each valid sample here
@@ -22,6 +22,8 @@ folder_weights = os.path.join('/home/olli/Projects/Kaggle/CryoET/Weights', NAME)
 os.makedirs(folder_weights, exist_ok=True)
 
 torch.set_float32_matmul_precision('high') if TRAIN_FULL else torch.set_float32_matmul_precision('medium')
+
+check_val_every_n_epoch = EPOCHS if TRAIN_FULL else 1
 
 valid_dice_values = []
 
@@ -42,7 +44,6 @@ for fold, sample in enumerate(samples):
         print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> TRAIN FULL <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
 
         NAME = 'Trained_FULL_' + NAME
-
 
     data_module = LightningData(
         train_samples=train_samples,
@@ -73,6 +74,7 @@ for fold, sample in enumerate(samples):
         logger=logger,
         max_epochs=EPOCHS,
         callbacks=[lr_monitor],
+        check_val_every_n_epoch=check_val_every_n_epoch
     )
 
     trainer.fit(model=nn, datamodule=data_module)
@@ -101,7 +103,6 @@ for fold, sample in enumerate(samples):
     del data_module
     del logger
     del lr_monitor
-    
 
     gc.collect()
     torch.cuda.empty_cache()

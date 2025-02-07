@@ -1,22 +1,19 @@
 import torch
 import pytorch_lightning as pl
 import os
-from glob import glob
 import zarr
 import json
 import numpy as np
-import matplotlib.pyplot as plt
 import random
 from monai.transforms import Compose, RandFlipd, RandRotated, RandGaussianNoised, RandAdjustContrastd, RandGaussianSmoothd, RandCoarseDropoutd
 import math
 from tqdm import tqdm
 
-'''
-AUG ONLY HORZ FLIP'''
-PATCH_SIZE = 128  # 96  # size of the 3d patches to crop out; only calculate loss for the inner cube; use a mask for this and a fitting stride such that each region contributes once
-STRIDE = 0.75  # stride when cropping out patches ()
+
+PATCH_SIZE = 128  # 96  # size of the 3d patches to crop out
+STRIDE = 0.75  # stride when cropping out patches
 assert (1 - STRIDE) * PATCH_SIZE % 2 == 0
-TRAIN_STRIDE = 32 # 32  # None: Use same stride as above; if specified use different stride for creating training patches (more) - idea: create same number of samples like with 96 and 0.75
+TRAIN_STRIDE = 32  # None: Use same stride as above; if specified use different stride for creating training patches (more)
 BATCH_SIZE = 4
 NUM_WORKERS = 16
 PIN_MEMORY = False
@@ -40,32 +37,7 @@ classes = {
     'virus-like-particle': 5,
 }
 
-# weights for computing the metric
-class_weights = {
-    'apo-ferritin': 1,
-    'beta-galactosidase': 2,
-    'ribosome': 1,
-    'thyroglobulin': 2,
-    'virus-like-particle': 1,
-}
-
-# radius for a correct prediction for each class (10A scale)
-class_radiuses = {
-    'apo-ferritin': 60 / 10,
-    'beta-galactosidase': 90 / 10,
-    'ribosome': 150 / 10,
-    'thyroglobulin': 130 / 10,
-    'virus-like-particle': 135 / 10,
-}
-
-#class_num_radius = {
-#    1: 60 / 10,
-#    2: 90 / 10,
-#    3: 150 / 10,
-#    4: 130 / 10,
-#    5: 135 / 10,
-#}
-
+# custom radius to avoid close predctions to touch and connected components to find one wrong target
 class_num_radius = {
     1: 5,
     2: 6,
@@ -101,7 +73,7 @@ for sample in samples:
         with open(path_json, 'r') as f:
             label = json.load(f)
 
-        # loop over all targets specified
+        # loop over all targets
         for location in label['points']:
 
             loc_values = location['location']
@@ -129,7 +101,7 @@ transform = Compose([
         padding_mode='zeros'
     ),
     RandGaussianNoised(keys=["image"], mean=0.0, std=0.075),
-    #RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.7, 1.3)),
+    RandAdjustContrastd(keys=["image"], prob=0.5, gamma=(0.9, 1.1)),
     #RandGaussianSmoothd(keys=["image"], sigma_x=(0.5, 1.5), sigma_y=(0.5, 1.5), sigma_z=(0.5, 1.5), prob=0.5),
     #RandCoarseDropoutd(
     #    keys=["image", "label"],
@@ -174,7 +146,7 @@ class Data(torch.utils.data.Dataset):
         # for equal weights in all 6 classes for cross_entropy
         self.weights_cross_entropy = torch.ones(size=(6,))
 
-        # calculate weights before training
+        # calculate weights before training; no longer used; weightedrandomsampler works better
         #self.calculate_equal_weights()
 
         # calculate sampler weights
@@ -229,7 +201,7 @@ class Data(torch.utils.data.Dataset):
             # add the label for the background class
             volume_target[0] = (np.sum(volume_target[1:6], axis=0) == 0)
 
-            step_crop = int(PATCH_SIZE * STRIDE) if TRAIN_STRIDE is None else TRAIN_STRIDE
+            step_crop = int(PATCH_SIZE * STRIDE) if self.train_stride is None else self.train_stride
             assert step_crop == int(step_crop)
             
             
@@ -308,7 +280,7 @@ class Data(torch.utils.data.Dataset):
         # finally assign it
         self.weights_cross_entropy = torch.Tensor(class_weights).type(torch.float32)
 
-    # each class should be 
+    # randomly pick patches such that each class is roughly seen as many times as empty patches with no target (mostly the case)
     def calculate_sampler_weights(self):
 
         print(f'Calculating WeightedRandomSampler Weights for {len(self.outputs)} samples...')
@@ -328,8 +300,7 @@ class Data(torch.utils.data.Dataset):
         # ignore masked border when counting
         ignore_size = int((1 - STRIDE) * PATCH_SIZE / 2)
 
-        # number of voxels that must be present for the class to be counted as one
-        # this is approximately 20% of the full target
+        # if a target is only partially visible only count it as one when its at least 20% visible
         thresholds = [math.pi / 6 * (class_num_radius[c] * 2)**3 * 0.2 for c in range(1, 6)]  # 20% of full volume is the threshold
 
         # loop over all shuffled outputs (targets) and count if the inner cube has a target of any of the 5 classes (use min voxels)
@@ -409,7 +380,7 @@ class Data(torch.utils.data.Dataset):
         # for monai augmentation to work the shapes need to match; add channel for input
         vol = np.expand_dims(vol, axis=0)
 
-        # augment volume and targetif specified
+        # augment volume and target if specified
         if self.transform is not None:
 
             data = {
@@ -464,7 +435,7 @@ class LightningData(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.transform = transform
         self.train_stride = train_stride
-        self.sampler_len = 243 * 6 if train_full else 5 * 243
+        self.sampler_len = 243 * 6 if train_full else 5 * 243  # optimal values for epochs and lr before weightedrandomsampler
 
         print(f'USING {self.sampler_len} SAMPLES per EPOCH!!!')
 
@@ -480,7 +451,7 @@ class LightningData(pl.LightningDataModule):
             dataset=self.ds_train,
             batch_size=self.batch_size,
             shuffle=False,  # False when using sampler
-            sampler=torch.utils.data.WeightedRandomSampler(weights=self.ds_train.sampler_weights, replacement=True, num_samples=self.sampler_len),  # hard code old number fpr 96 patches  # len(self.ds_train.sampler_weights)),
+            sampler=torch.utils.data.WeightedRandomSampler(weights=self.ds_train.sampler_weights, replacement=True, num_samples=self.sampler_len),
             num_workers=self.num_workers,
             pin_memory=self.pin_memory            
         )
@@ -498,62 +469,3 @@ class LightningData(pl.LightningDataModule):
         )
 
         return dl_valid
-
-
-
-
-if __name__ == '__main__':
-
-
-    
-    data = Data(sample_names=['TS_5_4', 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4'], transform=transform, train_stride=TRAIN_STRIDE)  # , 'TS_6_6', 'TS_99_9', 'TS_73_6', 'TS_86_3', 'TS_6_4', 'TS_69_2'])
-
-    _ = data.__getitem__(0)
-    
-    
-    '''for i in range(100):
-        input_, segmentation_mask, coords = data.__getitem__(i)
-
-        input_ = input_.squeeze(0).numpy()
-        segmentation_mask = segmentation_mask.numpy()
-
-        if segmentation_mask[-1, :, :, :].max() > 0:
-
-            for z_slice in range(PATCH_SIZE):
-                fig, ax = plt.subplots(ncols=7, figsize=(3*7, 3))
-                ax[0].imshow(input_[z_slice, :, :], cmap='gray')
-                ax[0].axis('off')
-                for c in range(1, 7):
-                    
-                    ax[c].imshow(segmentation_mask[c - 1, z_slice, :, :], cmap='gray', vmin=0, vmax=1)
-                    ax[c].axis('off')
-                plt.show()
-
-            break'''
-    '''for ix in range(0, len(data.inputs), 10):
-        i, mask, _ = data.__getitem__(ix)
-
-        i = np.array(i)
-        mask = np.array(mask)
-
-        for c in range(1, 6):
-            print(c, mask[c, :, :, :].max())
-            #for z_slice in range(48):
-
-            #    print(mask[c, z_slice, :, :].max(), c)
-
-        # now loop in parallel over all z slices from input and output and plot them next to each other
-        fig, ax = plt.subplots(nrows=PATCH_SIZE, ncols=7, figsize=(7 * 2, PATCH_SIZE * 2))
-        plt.subplots_adjust(wspace=0.1, hspace=0.1)
-        for slice in range(0, PATCH_SIZE):
-
-            ax[slice, 0].imshow(i[0, slice, :, :], cmap='gray')
-            ax[slice, 0].axis('off')
-
-            for index in range(1, 7):
-                ax[slice, index].imshow(mask[index - 1, slice, :, :], cmap='gray', vmin=0, vmax=1)
-                ax[slice, index].axis('off')
-
-        plt.tight_layout()
-
-        fig.savefig(f'/home/olli/Downloads/Example_Seg_Mask_Background_{ix}.png')'''

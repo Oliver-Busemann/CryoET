@@ -6,17 +6,13 @@ from torchinfo import summary
 from monai.losses import DiceLoss
 from torch.optim.lr_scheduler import OneCycleLR
 
-'''Macro Average Dice -> No Divergence?!
-Punish overlap in loss?
-Other model
-LOSS FOR METRIC
-'''
+
 RATIO_LOSSES = 0.75  # 0-1 (weight for crossentropy vs diceloss)
 INCLUDE_BACCKGROUND_DICELOSS = False  # if the background class should be included for dice loss calculation
 
 DROP_RATE = 0.2
-CHANNELS =(32, 64, 128, 256, 512)  # (32, 64, 128, 256, 512)
-STRIDES = (2, 2, 1, 1)  # (2, 2, 1, 1)
+CHANNELS =(32, 64, 128, 256, 512)
+STRIDES = (2, 2, 1, 1)
 NUM_RES_UNITS = 1
 
 assert len(CHANNELS) == len(STRIDES) + 1
@@ -62,17 +58,6 @@ class NN(pl.LightningModule):
             num_res_units=num_res_units
         )
 
-        '''self.cnn = monai.networks.nets.AttentionUnet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=6,
-        channels=CHANNELS,
-        strides=STRIDES,
-        dropout=DROP_RATE
-        )'''
-
-        '''self.cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=24, drop_rate=self.drop_rate, attn_drop_rate=0.2)'''
-        
         self.valid_dice_weighted = []
 
         # assign predictions of last epoch here
@@ -103,9 +88,9 @@ class NN(pl.LightningModule):
 
         return mask, ignore_size
 
-    
     # takes as input prediction probabilities and targets
     # calculates the IoU for all 6 classes and the average from them
+    # same for dice score
     def calculate_IoU_Dice_scores(self, preds_sm, targets):
 
         with torch.no_grad():
@@ -334,41 +319,5 @@ class NN(pl.LightningModule):
             }
 
         return [optim], [lr_scheduler]
-    
 
-
-        
-if __name__ == '__main__':
-    
-    '''cnn = monai.networks.nets.UNet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=6,
-        channels=CHANNELS,
-        strides=STRIDES,
-        dropout=DROP_RATE
-    )'''
-
-    '''cnn = monai.networks.nets.AttentionUnet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=6,
-        channels=CHANNELS,
-        strides=STRIDES,
-        dropout=DROP_RATE
-    )'''
-
-    cnn = monai.networks.nets.SwinUNETR((96, 96, 96), 1, 6, feature_size=24)   # depths=(1, 1, 1, 1))   # num_heads=(3, 4, 8, 12))
-
-    #cnn = monai.networks.nets.SEResNext50(spatial_dims=3, in_channels=1)
-
-    exp_input = torch.zeros(4, 1, 96, 96, 96)
-    print(summary(cnn, input_data=exp_input))
-    print(cnn(exp_input).size())
-    with torch.no_grad():
-        pred = cnn(exp_input)
-    pred = F.softmax(pred, dim=1)
-    for batch_ix in range(2):
-        for dim in range(5):
-            print(pred[batch_ix, dim, :, :, :].min(), pred[batch_ix, dim, :, :, :].mean(), pred[batch_ix, dim, :, :, :].max())
 

@@ -14,15 +14,11 @@ from data import class_num_radius
 import math
 
 
-'''BREAK THIN STRUCTURES TO SPLIT PREDICTIONS THAT ARE CLOSE TOGETHER - Distance-Based Splitting Using Watershed
-Remove large components too?
-FILTER ON OTHER METRICS!! (aspect ratio or intensity values)'''
-
-NAME_RUN = 'LR_Scheduler_Best_PATCH_SIZE_128_FocalDiceLoss'
+NAME_RUN = 'PATCH_SIZE_128_EPOCHS_40_LR5e4_TRAIN_STRIDE_32'
 
 CONNECTIVITY = 26  # 6, 18 or 26  # lower means more detections
 RESIZE_FACTOR_CC = 0.5
-FRACTION_VOL_CORRECT = 0.5  # if a connected component is e.g. half of a mask from that class discard the prediction
+FRACTION_VOL_CORRECT = 0.2  # if a connected component is e.g. half of a mask from that class discard the prediction
 
 
 def sphere_voxels(radius):
@@ -176,12 +172,6 @@ for c in tqdm(range(1, 6)):
         # find connected components; this is an array with the same shape that has unique values for each component (0 is background)
         pred_class_sample_components = cc3d.connected_components(pred_class_sample, connectivity=CONNECTIVITY)
 
-        #print(f'\nCLASS: {c} - TH: {thresholds[c]}\n')
-        #for value in np.unique(pred_class_sample_components):
-        #    if value != 0:
-        #        tmp = pred_class_sample_components == value
-        #        print(tmp.sum())
-
         # filter out components that are smaller the the defined threshold
         pred_class_sample_components = cc3d.dust(pred_class_sample_components, threshold=thresholds[c])
 
@@ -215,7 +205,7 @@ final_score = score(
     solution=df_targets,
     submission=df_preds,
     row_id_column_name='id',
-    distance_multiplier=0.5,  # ain 0.5 of  radius??
+    distance_multiplier=0.5,
     beta=4
 )
 

@@ -6,7 +6,7 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
-NAME_RUN = 'LR_Scheduler_Best_PATCH_SIZE_128'
+NAME_RUN = 'PATCH_SIZE_128_EPOCHS_40_LR5e4_TRAIN_STRIDE_32'
 
 folder_predictions = os.path.join('/home/olli/Projects/Kaggle/CryoET/Predictions', NAME_RUN)
 folder_data = '/home/olli/Projects/Kaggle/CryoET/Data/train'
