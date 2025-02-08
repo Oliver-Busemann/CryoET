@@ -11,4 +11,14 @@
 - Save predictions from hold-out fold to disc
 - After 7-folds run connected-components-3D & competition metric on all predictions at once to get final score
 
-### CV-score: 0.7781; Public-LB: 0.72782; Private-LB: 0.71783
+### CV-score: 0.7781; Public-LB: 0.72782; Private-LB: 0.71783  
+
+### What improved CV:  
+
+- Larger patches (128 > 96 > 48)  
+- Loss: 0.75 cross-entropy (without weights) + 0.25 dice loss (excluding background)  
+- Masked loss: use only the inner (96, 96, 96) for loss as partially visible targets at the border lack context  
+- Use the same mask for assigning predictions to reduce border artifacts  
+- WeightedRandomSampler: upsample patches with targets such that each target is present in a patch as many times as patches with only background (most)  
+- Augmentations: RandFlipd (x, y, z), RandRotated (only z), RandGaussianNoised (mean=0.0, std=0.075), RandAdjustContrastd (gamma=(0.9, 1.1))  
+- 
