@@ -31,3 +31,4 @@
 - TverskyLoss, DiceFocalLoss, weights in dice loss  
 - Other models like AttentionUnet
 - RandCoarseDropoutd, RandAdjustContrastd with lower/higher values, RandRotated around x/y
+- Removing smaller or larger connected-components based on threshold  
