@@ -26,7 +26,7 @@
 - Adam optimizer; 40 epochs; learning rate 5e-4, 1215 (1456) training (full-training) samples per epoch
 - LR-Scheduler: OneCycleLR  
 
-### What did not work for CV:  
+### What did not work:  
 
 - TverskyLoss, DiceFocalLoss, weights in dice loss  
 - Other models like AttentionUnet
