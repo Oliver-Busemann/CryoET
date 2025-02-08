@@ -25,3 +25,9 @@
 - Simple UNet: channels=(32, 64, 128, 256, 512), strides=(2, 2, 1, 1), dropout=0.2, num_res_units=1)  
 - Adam optimizer; 40 epochs; learning rate 5e-4, 1215 (1456) training (full-training) samples per epoch
 - LR-Scheduler: OneCycleLR  
+
+### What did not work for CV:  
+
+- TverskyLoss, DiceFocalLoss, weights in dice loss  
+- Other models like AttentionUnet
+- RandCoarseDropoutd, RandAdjustContrastd with lower/higher values, RandRotated around x/y
