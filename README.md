@@ -21,7 +21,8 @@
 - Use the same mask for assigning predictions to reduce border artifacts  
 - WeightedRandomSampler: upsample patches with targets such that each target is present in patches as many times as patches with only background (most)  
 - Augmentations: RandFlipd (x, y, z), RandRotated (only z), RandGaussianNoised (mean=0.0, std=0.075), RandAdjustContrastd (gamma=(0.9, 1.1))  
-- Lower train stride to get more patches to sample from (32)  
+- Lower train stride to get more patches to sample from (32)
+- Individual radius for creating segmentation masks (apo-ferritin: 5, beta-galactosidase: 6, ribosome: 10, thyroglobulin: 6, virus-like-particle: 12)  
 - Simple UNet: channels=(32, 64, 128, 256, 512), strides=(2, 2, 1, 1), dropout=0.2, num_res_units=1)  
 - Adam optimizer; 40 epochs; learning rate 5e-4, 1215 (1456) training (full-training) samples per epoch
 - LR-Scheduler: OneCycleLR  
