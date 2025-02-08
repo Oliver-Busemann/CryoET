@@ -4,3 +4,4 @@
 
 ## Approach: Single 3D-UNet to detect segmentation masks & run connected-components-3d to localize detections
 
+![Description](75.png)
